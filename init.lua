@@ -33,16 +33,29 @@ opt.showmode = false
 opt.signcolumn = 'yes'
 opt.smartcase = true
 opt.smarttab = true
-opt.tabstop = 4
+
+-- Tab settings (Go prefers tabs, web dev prefers spaces)
+-- Web default (2 spaces)
+opt.tabstop = 2
 opt.shiftwidth = 2
 opt.expandtab = true
 opt.softtabstop = 2
+
+-- Go will override these with file-specific settings
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "go",
+  callback = function()
+    vim.opt_local.expandtab = false
+    vim.opt_local.tabstop = 4
+    vim.opt_local.shiftwidth = 4
+  end,
+})
+
 opt.splitbelow = true
 opt.splitright = true
 opt.startofline = false
 opt.timeoutlen = 300
 opt.updatetime = 250
-
 
 -- Set list chars
 opt.list = true
@@ -52,25 +65,10 @@ opt.listchars = {
     nbsp = '␣'
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 -- [[ Basic Keymaps ]]
 local keymap = vim.keymap.set
 
 --nvim-tree
-
 keymap('n', '<space>e', ':NvimTreeToggle<CR>', {noremap = true})
 
 -- Clear search highlighting with <Esc>
@@ -95,6 +93,14 @@ keymap('n', '<down>', ':echo "Use j to move!!"<CR>', { silent = true })
 keymap('n', 'k', "v:count == 0 ? 'gk' : 'k'", { expr = true, silent = true })
 keymap('n', 'j', "v:count == 0 ? 'gj' : 'j'", { expr = true, silent = true })
 
+-- Go specific keymaps
+keymap('n', '<leader>gr', ':GoRun<CR>', { noremap = true, desc = 'Go Run' })
+keymap('n', '<leader>gt', ':GoTest<CR>', { noremap = true, desc = 'Go Test' })
+keymap('n', '<leader>gtf', ':GoTestFunc<CR>', { noremap = true, desc = 'Go Test Function' })
+keymap('n', '<leader>gb', ':GoBuild<CR>', { noremap = true, desc = 'Go Build' })
+keymap('n', '<leader>gi', ':GoImports<CR>', { noremap = true, desc = 'Go Imports' })
+keymap('n', '<leader>gd', ':GoDoc<CR>', { noremap = true, desc = 'Go Doc' })
+
 -- [[ Telescope Keymaps ]]
 local builtin = require('telescope.builtin')
 vim.keymap.set('n', '<space>fb', ':Telescope file_browser<CR>', { noremap = true })
@@ -106,22 +112,6 @@ keymap('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics'
 keymap('n', '<leader>/', builtin.current_buffer_fuzzy_find, { desc = '[/] Fuzzily search in current buffer' })
 keymap('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
 keymap('n', '<leader>.', builtin.oldfiles, { desc = '[.] Find recently opened files' })
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 -- [[ Plugin Installation ]]
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
@@ -140,143 +130,102 @@ vim.opt.rtp:prepend(lazypath)
 -- Plugin specifications
 require('lazy').setup({
   -- LSP Support
-{
-   'neovim/nvim-lspconfig',
-   dependencies = {
-     'williamboman/mason.nvim',
-     'williamboman/mason-lspconfig.nvim',
-     'Hoffs/omnisharp-extended-lsp.nvim',
-     -- Add DAP related dependencies
-     'mfussenegger/nvim-dap',
-     'rcarriga/nvim-dap-ui',
-     'theHamsta/nvim-dap-virtual-text',
-     'jay-babu/mason-nvim-dap.nvim',
-     'nvim-neotest/nvim-nio',
-   },
-   config = function()
-     -- Set debug logging first
-     vim.lsp.set_log_level("debug")
-     require('vim.lsp.log').set_format_func(vim.inspect)
-     
-     -- Setup Mason first with debug logging
-     require('mason').setup({
-         log_level = vim.log.levels.DEBUG
-     })
-     
-     -- Then setup mason-lspconfig and mason-dap
-     require('mason-lspconfig').setup({
-         ensure_installed = {'omnisharp'},
-         automatic_installation = true
-     })
+  {
+    'neovim/nvim-lspconfig',
+    dependencies = {
+      'williamboman/mason.nvim',
+      'williamboman/mason-lspconfig.nvim',
+    },
+    config = function()
+      -- Setup Mason first
+      require('mason').setup({})
+      
+      -- Then setup mason-lspconfig
+      require('mason-lspconfig').setup({
+        ensure_installed = {
+          'gopls',           -- Go
+          'tsserver',        -- TypeScript/JavaScript
+          'html',            -- HTML
+          'cssls',           -- CSS
+          'tailwindcss',     -- Tailwind CSS
+          'eslint',          -- ESLint
+          'jsonls',          -- JSON
+        },
+        automatic_installation = true
+      })
+      
+      local capabilities = require('cmp_nvim_lsp').default_capabilities()
+      local on_attach = function(_, bufnr)
+        local opts = { buffer = bufnr }
+        -- LSP keymaps
+        vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, opts)
+        vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
+        vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)
+        vim.keymap.set('n', 'gi', vim.lsp.buf.implementation, opts)
+        vim.keymap.set('n', '<C-k>', vim.lsp.buf.signature_help, opts)
+        vim.keymap.set('n', '<leader>rn', vim.lsp.buf.rename, opts)
+        vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action, opts)
+        vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
+        vim.keymap.set('n', '<leader>f', function() vim.lsp.buf.format { async = true } end, opts)
+      end
 
-     require("mason-nvim-dap").setup({
-         ensure_installed = { "coreclr" },
-         automatic_installation = true
-     })
+      -- Go LSP setup
+      require('lspconfig').gopls.setup{
+        capabilities = capabilities,
+        on_attach = on_attach,
+        cmd = {"gopls", "serve"},
+        filetypes = {"go", "gomod", "gowork", "gotmpl"},
+        root_dir = require('lspconfig').util.root_pattern("go.work", "go.mod", ".git"),
+        settings = {
+          gopls = {
+            analyses = {
+              unusedparams = true,
+              shadow = true,
+            },
+            staticcheck = true,
+            gofumpt = true,
+          },
+        },
+      }
 
-     -- DAP Setup
-     local dap = require('dap')
-     dap.adapters.coreclr = {
-         type = 'executable',
-         command = vim.fn.stdpath("data") .. '/mason/packages/netcoredbg/netcoredbg',
-         args = {'--interpreter=vscode'}
-     }
+      -- TypeScript/JavaScript LSP setup
+      require('lspconfig').tsserver.setup{
+        capabilities = capabilities,
+        on_attach = on_attach,
+        filetypes = { "typescript", "typescriptreact", "javascript", "javascriptreact" },
+      }
 
-     dap.configurations.cs = {
-         {
-             type = "coreclr",
-             name = "launch - netcoredbg",
-             request = "launch",
-             program = function()
-                 return vim.fn.input('Path to dll: ', vim.fn.getcwd() .. '/bin/Debug/', 'file')
-             end,
-         },
-     }
+      -- HTML LSP setup
+      require('lspconfig').html.setup{
+        capabilities = capabilities,
+        on_attach = on_attach,
+      }
 
-     -- Setup DAP UI
-     require("nvim-dap-virtual-text").setup()
-     require("dapui").setup()
+      -- CSS LSP setup
+      require('lspconfig').cssls.setup{
+        capabilities = capabilities,
+        on_attach = on_attach,
+      }
 
-     local dapui = require("dapui")
-     dap.listeners.after.event_initialized["dapui_config"] = function()
-         dapui.open()
-     end
-     dap.listeners.before.event_terminated["dapui_config"] = function()
-         dapui.close()
-     end
-     dap.listeners.before.event_exited["dapui_config"] = function()
-         dapui.close()
-     end
-     
-     local capabilities = require('cmp_nvim_lsp').default_capabilities()
-     local on_attach = function(_, bufnr)
-         local opts = { buffer = bufnr }
-         -- Existing LSP keymaps
-         vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, opts)
-         vim.keymap.set('n', 'gd', require('omnisharp_extended').telescope_lsp_definitions, opts)
-         vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)
-         vim.keymap.set('n', 'gi', vim.lsp.buf.implementation, opts)
-         vim.keymap.set('n', '<C-k>', vim.lsp.buf.signature_help, opts)
-         vim.keymap.set('n', '<leader>rn', vim.lsp.buf.rename, opts)
-         vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action, opts)
-         vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
-         vim.keymap.set('n', '<leader>f', vim.lsp.buf.format, opts)
+      -- Tailwind CSS LSP setup
+      require('lspconfig').tailwindcss.setup{
+        capabilities = capabilities,
+        on_attach = on_attach,
+      }
 
-         -- Debug keymaps
-         vim.keymap.set('n', '<F5>', function() require('dap').continue() end, opts)
-         vim.keymap.set('n', '<F10>', function() require('dap').step_over() end, opts)
-         vim.keymap.set('n', '<F11>', function() require('dap').step_into() end, opts)
-         vim.keymap.set('n', '<F12>', function() require('dap').step_out() end, opts)
-         vim.keymap.set('n', '<Leader>b', function() require('dap').toggle_breakpoint() end, opts)
-         vim.keymap.set('n', '<Leader>B', function() require('dap').set_breakpoint() end, opts)
-         vim.keymap.set('n', '<Leader>lp', function() require('dap').set_breakpoint(nil, nil, vim.fn.input('Log point message: ')) end, opts)
-         vim.keymap.set('n', '<Leader>dr', function() require('dap').repl.open() end, opts)
-         -- Optional DAP UI keymaps
-         vim.keymap.set('n', '<Leader>du', function() require('dapui').toggle() end, opts)
-     end
+      -- ESLint LSP setup
+      require('lspconfig').eslint.setup{
+        capabilities = capabilities,
+        on_attach = on_attach,
+      }
 
-     -- OmniSharp setup with improved handlers
-     require('lspconfig').omnisharp.setup{
-         capabilities = capabilities,
-         on_attach = function(client, bufnr)
-             print("OmniSharp attached to buffer: " .. vim.api.nvim_buf_get_name(bufnr))
-             on_attach(client, bufnr)
-             client.server_capabilities.semanticTokensProvider = nil
-         end,
-         handlers = {
-             ["textDocument/definition"] = require('omnisharp_extended').handler,
-         },
-         cmd = { "dotnet", vim.fn.stdpath("data") .. "/mason/packages/omnisharp/libexec/OmniSharp.dll" },
-         root_dir = require('lspconfig').util.root_pattern("*.sln", "*.csproj", ".git"),
-         settings = {
-             FormattingOptions = {
-                 EnableEditorConfigSupport = true
-             },
-             RoslynExtensionsOptions = {
-                 EnableAnalyzersSupport = true,
-                 EnableImportCompletion = true
-             },
-             Sdk = {
-                 IncludePrereleases = true
-             }
-         }
-     }
-
-     -- Other LSP setups
-     require('lspconfig').ts_ls.setup{
-         capabilities = capabilities,
-         on_attach = on_attach,
-     }
-     require('lspconfig').html.setup{
-         capabilities = capabilities,
-         on_attach = on_attach,
-     }
-     require('lspconfig').cssls.setup{
-         capabilities = capabilities,
-         on_attach = on_attach,
-     }
-   end
-},
+      -- JSON LSP setup
+      require('lspconfig').jsonls.setup{
+        capabilities = capabilities,
+        on_attach = on_attach,
+      }
+    end
+  },
 
   -- Autocompletion
   {
@@ -285,19 +234,49 @@ require('lazy').setup({
       'hrsh7th/cmp-nvim-lsp',
       'L3MON4D3/LuaSnip',
       'saadparwaiz1/cmp_luasnip',
+      'hrsh7th/cmp-buffer',
+      'hrsh7th/cmp-path',
     },
   },
---nvim-tree
-  {
-	'nvim-tree/nvim-tree.lua',
-	depencencies = {'nvim-tree/nvim-web-devicons'},
-	 config = function()
-		require("nvim-tree").setup()
-	    end
 
+  -- Go development
+  {
+    'fatih/vim-go',
+    ft = {'go'},
+    build = ':GoInstallBinaries',
+    config = function()
+      -- vim-go settings
+      vim.g.go_highlight_fields = 1
+      vim.g.go_highlight_functions = 1
+      vim.g.go_highlight_function_calls = 1
+      vim.g.go_highlight_extra_types = 1
+      vim.g.go_highlight_operators = 1
+      vim.g.go_highlight_build_constraints = 1
+      
+      -- Auto formatting and importing
+      vim.g.go_fmt_autosave = 1
+      vim.g.go_fmt_command = "goimports"
+      
+      -- Status line types/signatures
+      vim.g.go_auto_type_info = 1
+      
+      -- Use gopls
+      vim.g.go_gopls_enabled = 1
+      
+      -- Disable vim-go :GoDef short cut (gd)
+      -- This is handled by LSP
+      vim.g.go_def_mapping_enabled = 0
+    end
   },
 
-
+  -- nvim-tree
+  {
+    'nvim-tree/nvim-tree.lua',
+    dependencies = {'nvim-tree/nvim-web-devicons'},
+    config = function()
+      require("nvim-tree").setup()
+    end
+  },
 
   -- Syntax Highlighting
   {
@@ -305,8 +284,15 @@ require('lazy').setup({
     build = ":TSUpdate",
     config = function()
       require'nvim-treesitter.configs'.setup {
-        ensure_installed = { "c_sharp" },
+        ensure_installed = { 
+          "go", "gomod", "gowork",             -- Go
+          "javascript", "typescript", "tsx",   -- JS/TS
+          "html", "css",                       -- HTML/CSS
+          "json", "yaml", "markdown",          -- Data formats
+          "lua"                                -- Lua for config
+        },
         highlight = { enable = true },
+        indent = { enable = true },
       }
     end
   },
@@ -317,14 +303,11 @@ require('lazy').setup({
   -- Fuzzy finder
   {
     'nvim-telescope/telescope.nvim',
-    'nvim-telescope/telescope-file-browser.nvim',
     dependencies = { 'nvim-lua/plenary.nvim' },
-    require('telescope').setup({
-    	defaults = {
-		initial_mode = 'normal'
-	}
-
-    })
+  },
+  {
+    'nvim-telescope/telescope-file-browser.nvim',
+    dependencies = { 'nvim-telescope/telescope.nvim' },
   },
 
   -- Theme
@@ -338,6 +321,23 @@ require('lazy').setup({
 
   -- Comment
   'numToStr/Comment.nvim',
+
+  -- Autopairs
+  'windwp/nvim-autopairs',
+
+  -- React/JSX support
+  'maxmellon/vim-jsx-pretty',
+
+  -- Web development helpers
+  {
+    'norcalli/nvim-colorizer.lua',  -- Color highlighter
+    config = function()
+      require('colorizer').setup({'css', 'html', 'javascript', 'typescript', 'javascriptreact', 'typescriptreact'})
+    end
+  },
+  
+  -- Emmet support for HTML/CSS
+  'mattn/emmet-vim',
 })
 
 -- [[ Plugin Configuration ]]
@@ -386,6 +386,8 @@ cmp.setup({
     ['<Tab>'] = cmp.mapping(function(fallback)
       if cmp.visible() then
         cmp.select_next_item()
+      elseif luasnip.expand_or_jumpable() then
+        luasnip.expand_or_jump()
       else
         fallback()
       end
@@ -393,6 +395,8 @@ cmp.setup({
     ['<S-Tab>'] = cmp.mapping(function(fallback)
       if cmp.visible() then
         cmp.select_prev_item()
+      elseif luasnip.jumpable(-1) then
+        luasnip.jump(-1)
       else
         fallback()
       end
@@ -401,6 +405,8 @@ cmp.setup({
   sources = {
     { name = 'nvim_lsp' },
     { name = 'luasnip' },
+    { name = 'buffer' },
+    { name = 'path' },
   },
 })
 
@@ -410,13 +416,62 @@ require('Comment').setup()
 -- Setup lualine
 require('lualine').setup({
   options = {
-    theme = 'tokyonight'
-  }
+    theme = 'tokyonight',
+    component_separators = { left = '|', right = '|'},
+    section_separators = { left = '', right = ''},
+  },
+  sections = {
+    lualine_a = {'mode'},
+    lualine_b = {'branch', 'diff', 'diagnostics'},
+    lualine_c = {'filename'},
+    lualine_x = {'encoding', 'fileformat', 'filetype'},
+    lualine_y = {'progress'},
+    lualine_z = {'location'},
+  },
 })
 
 -- Setup gitsigns
 require('gitsigns').setup()
 
--- Telescope extension
-require("telescope").load_extension("file_browser")
+-- Setup autopairs
+require('nvim-autopairs').setup({
+  disable_filetype = { "TelescopePrompt" },
+  disable_in_macro = false,
+  disable_in_visualblock = false,
+  ignored_next_char = [=[[%w%%%'%[%"%.]]=],
+  enable_moveright = true,
+  enable_afterquote = true,
+  enable_check_bracket_line = true,
+})
 
+-- Emmet configuration
+vim.g.user_emmet_leader_key = '<C-z>'  -- Press Ctrl-z, then comma (,) to expand
+vim.g.user_emmet_install_global = 0
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = {"html", "css", "javascriptreact", "typescriptreact"},
+  callback = function()
+    vim.cmd("EmmetInstall")
+  end,
+})
+
+-- Telescope configuration 
+require('telescope').setup({
+  defaults = {
+    initial_mode = 'insert', -- Set to 'insert' for a more normal experience
+    mappings = {
+      i = {
+        ['<C-j>'] = 'move_selection_next',
+        ['<C-k>'] = 'move_selection_previous',
+      }
+    }
+  },
+  extensions = {
+    file_browser = {
+      theme = "dropdown",
+      hijack_netrw = true,
+    },
+  }
+})
+
+-- Load Telescope extensions
+require("telescope").load_extension("file_browser")
